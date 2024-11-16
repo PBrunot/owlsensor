@@ -1,18 +1,7 @@
-psensor - Library for particulate matter sensors
+owlsensor - Library for OWL CM 160 Energy meter
 ================================================
 
-This library lets you read sensor data from serial-connected particulate matter sensors. Currently it supports the following sensors:
+This library lets you read sensor data from serial-connected OWL Energy meter.
+It current supports the following model:
 
-- OneAir A3
-- Nova Fitness SDS021
-- Nova Fitness SDL607
-- Plantower PMS1003
-- Plantower PMS2003
-- Plantower PMS3003
-- Plantower PMS5003
-- Plantower PMS7003
-- Winsen ZH03B
-
-It also supports the following CO2-Sensor:
-
-- MH-Z19
+- CM 160

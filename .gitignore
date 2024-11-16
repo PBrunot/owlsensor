@@ -1,6 +1,7 @@
 .project
 .pydevproject
 __pycache__
-pmsensor.egg-info
+owlsensor.egg-info
 .settings
 .DS_Store
+/.vs

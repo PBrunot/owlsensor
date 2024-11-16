@@ -2,17 +2,10 @@
 
 ## Supported Versions
 
-The following versions of pmsensors are currently being supported 
-with security updates.
-
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.5   | :white_check_mark: |
-| 0.4   | :white_check_mark:                |
-| < 0.4   | :x:                |
+Currently no security support is available.
 
 ## Reporting a Vulnerability
 
-To report a vunerablity please e-mail bencorrado+security@gmail.com.  
+To report a vunerablity please open an issue in this repository.
 Please allow two weeks for a response before creating an issue or 
 publishing it publicly before an update can be release.

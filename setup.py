@@ -1,11 +1,11 @@
 from setuptools import setup, find_packages
 
-setup(name='pmsensor',
-      version='0.5',
-      description='Library to read data from environment ensors',
-      url='https://github.com/open-homeautomation/pmsensor',
-      author='Daniel Matuschek',
-      author_email='daniel@matuschek.net',
+setup(name='owlsensor',
+      version='0.1',
+      description='Library to read data from OWL Energy meters',
+      url='https://github.com/PBrunot/owlsensor',
+      author='Pascal Brunot',
+      author_email='pbr-dev@gmail.com',
       license='MIT',
       classifiers=[
           'Development Status :: 3 - Alpha',
@@ -18,5 +18,5 @@ setup(name='pmsensor',
       ],
       packages=find_packages(),
       install_requires=['pyserial>=3'],
-      keywords='serial pm2.5 pm1.0 pm10 co2',
+      keywords='serial owl cm160 energy_meter homeautomation',
       zip_safe=False)

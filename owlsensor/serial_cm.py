@@ -22,112 +22,29 @@ DTR_OFF = "NOT_DTR"
 MULTIPLIER = "MP"
 TIMEOUT = "TO"
 
-PMVALS = [PM_1_0, PM_2_5, PM_10]
-
-
-ONEAIR_S3 = {
-    "name": "OneAir S3",
-    STARTBLOCK: bytes([0x32, 0x3d, 0x00, 0x1c]),
-    RECORD_LENGTH: 32,
-    PM_1_0: 6,
-    PM_2_5: 8,
-    PM_10: 10,
-    BAUD_RATE: 9600,
-    BYTE_ORDER: MSB,
-    MULTIPLIER: 1,
-    TIMEOUT: 2
-}
-
-NOVA_SDS = {
-    "name": "Nova SDS0x1",
-    STARTBLOCK: bytes([0xaa, 0xc0]),
-    RECORD_LENGTH: 10,
-    PM_1_0: None,
-    PM_2_5: 2,
-    PM_10: 4,
-    BAUD_RATE: 9600,
-    BYTE_ORDER: LSB,
-    MULTIPLIER: 0.1,
-    TIMEOUT: 2
-}
-
-# Data from
-# https://github.com/cezbloch/smog/blob/master/SmogMeters.py
-# PCB internal marking "SDL307"
-NOVA_SDL = {
-    'name': 'Nova SDLx07',
-    STARTBLOCK: bytes([0xaa, 0xa5]),
-    RECORD_LENGTH: 19,
-    PM_1_0: None,
-    PM_2_5: 7,
-    PM_10: 11,
-    BAUD_RATE: 9600,
-    BYTE_ORDER: LSB,
-    MULTIPLIER: 0.1,
-    TIMEOUT: 2
-}
-
-# Data from
-# https://github.com/avaldebe/AQmon/blob/master/lua_modules/pms3003.lua
-PLANTOWER1 = {
-    "name": "Plantower PMS1003/5003,7003",
-    STARTBLOCK: bytes([0x42, 0x4d, 0x00, 0x1c]),
-    RECORD_LENGTH: 32,
-    PM_1_0: 4,
-    PM_2_5: 6,
-    PM_10: 8,
-    BAUD_RATE: 9600,
-    BYTE_ORDER: MSB,
-    MULTIPLIER: 1,
-    TIMEOUT: 2
-}
-
-PLANTOWER2 = {
-    "name": "Plantower PMS2003/3003",
-    STARTBLOCK: bytes([0x42, 0x4d, 0x00, 0x14]),
-    RECORD_LENGTH: 24,
-    PM_1_0: 4,
-    PM_2_5: 6,
-    PM_10: 8,
-    BAUD_RATE: 9600,
-    BYTE_ORDER: MSB,
-    MULTIPLIER: 1,
-    TIMEOUT: 2
-}
-
-# Data from
-# https://www.winsen-sensor.com/d/files/ZH03B.pdf
-WINSEN = {
-    "name": "Winsen ZH03B",
+# Owl CM160 settings
+OWL_CM160 = {
+    "TheOWL": "CM160",
     STARTBLOCK: bytes([0x42, 0x4d, 0x00, 0x14]),
     RECORD_LENGTH: 24,
     PM_1_0: 10,
     PM_2_5: 12,
     PM_10: 14,
-    BAUD_RATE: 9600,
+    BAUD_RATE: 250000,
     BYTE_ORDER: MSB,
     MULTIPLIER: 1,
     TIMEOUT: 2
 }
 
 SUPPORTED_SENSORS = {
-    "oneair,s3": ONEAIR_S3,
-    "novafitness,sds021": NOVA_SDS,
-    "novafitness,sds011": NOVA_SDS,
-    "novafitness,sdl607": NOVA_SDL,
-    "plantower,pms1003": PLANTOWER1,
-    "plantower,pms5003": PLANTOWER1,
-    "plantower,pms7003": PLANTOWER1,
-    "plantower,pms2003": PLANTOWER2,
-    "plantower,pms3003": PLANTOWER2,
-    "winsen,zh03b": WINSEN,
+    "TheOWL,CM160": OWL_CM160
 }
 
 
 LOGGER = logging.getLogger(__name__)
 
 
-class PMDataCollector():
+class CMDataCollector():
     """Controls the serial interface and reads data from the sensor."""
 
 # pylint: disable=too-many-instance-attributes
