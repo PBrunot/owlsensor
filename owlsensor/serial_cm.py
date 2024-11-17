@@ -1,18 +1,18 @@
 """
 Reading data from particulate matter sensors with a serial interface.
 """
+from dataclasses import dataclass
 import time
 import logging
 import asyncio
 from serial import SerialException
 import serial_asyncio_fast
-
+from enum import StrEnum
 from .const import *
 
 
 # Owl CM160 settings
 OWL_CM160 = {
-    "TheOWL": "CM160",
     RECORD_LENGTH: 11,
     CURRENT: 8,
     BAUD_RATE: 250000,
@@ -36,6 +36,24 @@ CMVALS=[CURRENT]
 
 LOGGER = logging.getLogger(__name__)
 
+class DeviceType(StrEnum):
+    """Device types."""
+
+    CM160_I = "CM 160 - Current"
+
+DEVICES = [
+    {"id": 1, "type": DeviceType.CM160_I},
+]
+
+@dataclass
+class Device:
+    """API device."""
+
+    device_id: int
+    device_unique_id: str
+    device_type: DeviceType
+    name: str
+    state: int | bool
 
 class CMDataCollector():
     """Controls the serial interface and reads data from the sensor."""
@@ -64,7 +82,7 @@ class CMDataCollector():
         self.writer = None
         self.baudrate = configuration[BAUD_RATE]
         self.connected = False
-        self.updateTask = None
+        self.update_task = None
 
     async def connect(self) -> bool:
         """Establish the serial connection asynchronously."""
@@ -80,15 +98,15 @@ class CMDataCollector():
         
         self.connected = True
 
-        if self.updateTask is not None:
+        if self.update_task is not None:
             try:
-                self.updateTask.cancel()
-                self.updateTask = None
+                self.update_task.cancel()
+                self.update_task = None
             except Exception as e:
                 LOGGER.warning("Exception while cancelling update Task: %s", e)
 
         if self.scan_interval > 0:
-            self.updateTask = asyncio.create_task(self.refresh())
+            self.update_task = asyncio.create_task(self.refresh())
         
         return True
 
@@ -98,12 +116,12 @@ class CMDataCollector():
             await self.read_data()
             await asyncio.sleep(self.scan_interval)
 
-    async def send_data(self, data: bytes):
+    async def send_data(self, data: bytes) -> None:
         LOGGER.debug("-> %s", ''.join(format(x, '02x') for x in data))
         self.writer.write(data)
         await self.writer.drain()
     
-    async def get_packet(self):
+    async def get_packet(self) -> bytearray:
         sbuf = bytearray()
         starttime = asyncio.get_event_loop().time()
 
@@ -182,7 +200,7 @@ class CMDataCollector():
         self.last_poll = asyncio.get_event_loop().time()
         return res
 
-    def parse_buffer(self, sbuf):
+    def parse_buffer(self, sbuf) -> dict:
         """Parse the buffer and return the CM values."""
         res = {}
         for pmname in CMVALS:
@@ -207,3 +225,34 @@ class CMDataCollector():
             if offset is not None:
                 res.append(pmname)
         return res
+    
+    def get_devices(self) -> list[Device]:
+        """Get devices on api."""
+        return [
+            Device(
+                device_id=device.get("id"),
+                device_unique_id=self.get_device_unique_id(
+                    device.get("id"), device.get("type")
+                ),
+                device_type=device.get("type"),
+                name=self.get_device_name(device.get("id"), device.get("type")),
+                state=self._data,
+            )
+            for device in DEVICES
+        ]
+    
+    def controller_name(self) -> str:
+        """Return the name of the controller."""
+        return self.serialdevice.replace(".", "_")
+        
+    def get_device_unique_id(self, device_id: str, device_type: DeviceType) -> str:
+        """Return a unique device id."""
+        if device_type == DeviceType.CM160_I:
+            return f"{self.controller_name}_I_{device_id}"
+        return f"{self.controller_name}_Z{device_id}"
+
+    def get_device_name(self, device_id: str, device_type: DeviceType) -> str:
+        """Return the device name."""
+        if device_type == DeviceType.CM160_I:
+            return f"CM160 Current {device_id}"
+        return f"CM160 Other {device_id}"
