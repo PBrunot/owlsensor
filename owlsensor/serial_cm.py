@@ -4,6 +4,7 @@ Reading data from particulate matter sensors with a serial interface.
 import time
 import logging
 import asyncio
+from serial import SerialException
 import serial_asyncio_fast
 
 from .const import *
@@ -62,16 +63,34 @@ class CMDataCollector():
         self.reader = None
         self.writer = None
         self.baudrate = configuration[BAUD_RATE]
+        self.connected = False
+        self.updateTask = None
 
-    async def connect(self):
+    async def connect(self) -> bool:
         """Establish the serial connection asynchronously."""
-        self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(
-            url=self.serialdevice,
-            baudrate=self.baudrate
-        )
+        self.connected = False
+        try:
+            self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(
+                url=self.serialdevice,
+                baudrate=self.baudrate
+            )
+        except SerialException as ex:
+            LOGGER.warning("Connect: %s", ex)
+            return False
+        
+        self.connected = True
+
+        if self.updateTask is not None:
+            try:
+                self.updateTask.cancel()
+                self.updateTask = None
+            except Exception as e:
+                LOGGER.warning("Exception while cancelling update Task: %s", e)
 
         if self.scan_interval > 0:
-            asyncio.create_task(self.refresh())
+            self.updateTask = asyncio.create_task(self.refresh())
+        
+        return True
 
     async def refresh(self):
         """Asynchronous background refreshing task."""
@@ -130,8 +149,13 @@ class CMDataCollector():
 
         return None
 
-    async def read_data(self):
+    async def read_data(self) -> dict | None:
         """Read data from the serial interface asynchronously."""
+
+        if not self.connected:
+            if not await self.connect():
+                return None
+
         mytime = asyncio.get_event_loop().time()
         if (self.last_poll is not None) and \
            (mytime - self.last_poll) <= 15 and \
@@ -142,12 +166,17 @@ class CMDataCollector():
         finished = False
 
         while not finished:
-            packet = await self.get_packet()
-            if packet:
-                result = await self.parse_packet(packet)
-                if result is not None:
-                    res = result
-                    finished = True
+            try:
+                packet = await self.get_packet()
+                if packet:
+                    result = await self.parse_packet(packet)
+                    if result is not None:
+                        res = result
+                        finished = True
+            except SerialException as ex:
+                LOGGER.warning(ex)
+                self.connected = False
+                return None
 
         self._data = res
         self.last_poll = asyncio.get_event_loop().time()
