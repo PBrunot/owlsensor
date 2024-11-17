@@ -5,7 +5,7 @@ Reading data from particulate matter sensors with a serial interface.
 import time
 import logging
 import asyncio
-from serial import SerialException
+from serial import EIGHTBITS, PARITY_NONE, STOPBITS_ONE, SerialException
 import serial_asyncio_fast
 
 from owlsensor.device import Device, DeviceType
@@ -74,13 +74,22 @@ class CMDataCollector():
         try:
             self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(
                 url=self.serialdevice,
-                baudrate=self.baudrate
+                baudrate=self.baudrate,
+                parity=PARITY_NONE,
+                bytesize=EIGHTBITS,
+                stopbits=STOPBITS_ONE,
+                timeout=1,
+                write_timeout=1,
+                exclusive=True
             )
         except SerialException as ex:
             LOGGER.warning("Connect: %s", ex)
             return False
         
         self.connected = True
+        
+        # Stimulate the device
+        await self.send_data(CONTINUE_REQUEST)
 
         if self.update_task is not None:
             try:
@@ -92,6 +101,7 @@ class CMDataCollector():
         if self.scan_interval > 0:
             self.update_task = asyncio.create_task(self.refresh())
         
+        LOGGER.info("Connection to %s successfull", self.serialdevice)
         return True
 
     async def refresh(self):
@@ -109,14 +119,18 @@ class CMDataCollector():
         sbuf = bytearray()
         starttime = asyncio.get_event_loop().time()
 
-        while len(sbuf) != self.record_length:
+        while len(sbuf) < self.record_length:
             elapsed = asyncio.get_event_loop().time() - starttime
             if elapsed > self.timeout:
                 LOGGER.error("Timeout waiting for data")
                 return bytearray()
 
             try:
-                sbuf += await self.reader.readexactly(1)
+                bytes = await self.reader.readexactly(1)
+                if len(bytes)==0:
+                    LOGGER.warning("Timeout on data on serial")
+                    return bytearray()
+                sbuf += bytes
             except asyncio.IncompleteReadError:
                 LOGGER.warning("Timeout on data on serial")
                 return bytearray()
@@ -210,33 +224,13 @@ class CMDataCollector():
                 res.append(pmname)
         return res
     
-    def get_devices(self) -> list[Device]:
-        """Get devices on api."""
-        return [
-            Device(
-                device_id=device.get("id"),
-                device_unique_id=self.get_device_unique_id(
-                    device.get("id"), device.get("type")
-                ),
-                device_type=device.get("type"),
-                name=self.get_device_name(device.get("id"), device.get("type")),
-                state=self._data,
-            )
-            for device in DEVICES
-        ]
-    
-    def controller_name(self) -> str:
-        """Return the name of the controller."""
-        return self.serialdevice.replace(".", "_")
+    def get_current(self) -> float | None:
+        """ Returns latest realtime current transmitted by the device """
         
-    def get_device_unique_id(self, device_id: str, device_type: DeviceType) -> str:
-        """Return a unique device id."""
-        if device_type == DeviceType.CM160_I:
-            return f"{self.controller_name}_I_{device_id}"
-        return f"{self.controller_name}_Z{device_id}"
-
-    def get_device_name(self, device_id: str, device_type: DeviceType) -> str:
-        """Return the device name."""
-        if device_type == DeviceType.CM160_I:
-            return f"CM160 Current {device_id}"
-        return f"CM160 Other {device_id}"
+        if self._data is None:
+            return None
+        
+        if CURRENT in self._data:
+            return self._data[CURRENT]
+        
+        return None

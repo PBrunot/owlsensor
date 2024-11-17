@@ -1,4 +1,5 @@
 from .serial_cm import CMDataCollector, SUPPORTED_SENSORS
+from .device import Device
 
 def get_async_datacollector(port_url: str, model: str, scan_interval_s: int = 30) -> CMDataCollector:
     """

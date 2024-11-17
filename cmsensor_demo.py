@@ -3,20 +3,24 @@ import logging
 import time
 from owlsensor import serial_cm as cm
 
+LOGGER = logging.getLogger(__name__)
 
-async def main_loop():
+async def main_loop(port: str):
     logging.basicConfig(level=logging.DEBUG)
+    
+    LOGGER.info("Connecting to %s", port)
     sensors = []
-    sensors.append(cm.CMDataCollector("COM4",
-                                      cm.SUPPORTED_SENSORS["TheOWL,CM160"]))
+    sensors.append(cm.CMDataCollector(port, cm.SUPPORTED_SENSORS["CM160"]))
 
     for s in sensors:
-        await s.connect()
+        result = await s.connect()
+        LOGGER.info("Connection result : %d", result)
 
     while True:
         for s in sensors:
-            print(await s.read_data())
+            data = await s.read_data()
+            LOGGER.info("Read: %s", data)
         await asyncio.sleep(3)
 
 if __name__ == '__main__':
-    asyncio.run(main_loop())
+    asyncio.run(main_loop("/dev/ttyUSB0"))
