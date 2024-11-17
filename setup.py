@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(name='owlsensor',
-      version='0.3.2',
+      version='0.3.3',
       description='Library to read data from OWL Energy meters',
       long_description='This package is designed for integrating into Home Assistant a serial-connected OWL energy meter.',
       long_description_content_type = 'text/x-rst',
@@ -19,6 +19,6 @@ setup(name='owlsensor',
           'Programming Language :: Python :: 3.5'
       ],
       packages=find_packages(),
-      install_requires=['pyserial-asyncio-fast>=0.14'],
+      install_requires=['pyserial-asyncio-fast>=0.13'],
       keywords='serial owl cm160 energy_meter homeautomation',
       zip_safe=False)
