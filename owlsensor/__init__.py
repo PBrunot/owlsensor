@@ -1,6 +1,6 @@
 from .serial_cm import CMDataCollector, SUPPORTED_SENSORS
 
-async def get_async_datacollector(port_url: str, model: str, scan_interval_s: int = 30) -> CMDataCollector:
+def get_async_datacollector(port_url: str, model: str, scan_interval_s: int = 30) -> CMDataCollector:
     """
     Return asynchronous version of CMDataCollector interface
     :param port_url: serial port, i.e. '/dev/ttyUSB0'
