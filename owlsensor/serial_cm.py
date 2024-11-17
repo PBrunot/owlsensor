@@ -1,13 +1,15 @@
 """
 Reading data from particulate matter sensors with a serial interface.
 """
-from dataclasses import dataclass
+
 import time
 import logging
 import asyncio
 from serial import SerialException
 import serial_asyncio_fast
-from enum import StrEnum
+
+from owlsensor.device import Device, DeviceType
+
 from .const import *
 
 
@@ -36,24 +38,6 @@ CMVALS=[CURRENT]
 
 LOGGER = logging.getLogger(__name__)
 
-class DeviceType(StrEnum):
-    """Device types."""
-
-    CM160_I = "CM 160 - Current"
-
-DEVICES = [
-    {"id": 1, "type": DeviceType.CM160_I},
-]
-
-@dataclass
-class Device:
-    """API device."""
-
-    device_id: int
-    device_unique_id: str
-    device_type: DeviceType
-    name: str
-    state: int | bool
 
 class CMDataCollector():
     """Controls the serial interface and reads data from the sensor."""
