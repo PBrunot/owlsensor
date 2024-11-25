@@ -10,7 +10,7 @@ setup(name='owlsensor',
       author_email='pbr-dev@gmail.com',
       license='MIT',
       classifiers=[
-          'Development Status :: 2 - Beta',
+          'Development Status :: 4 - Beta',
           'Intended Audience :: Developers',
           'Topic :: System :: Hardware :: Hardware Drivers',
           'License :: OSI Approved :: MIT License',
