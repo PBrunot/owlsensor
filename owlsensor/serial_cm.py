@@ -82,7 +82,7 @@ class CMDataCollector():
                 write_timeout=1,
                 exclusive=True
             )
-        except SerialException as ex:
+        except Exception as ex:
             LOGGER.warning("Connect: %s", ex)
             return False
         
@@ -107,13 +107,21 @@ class CMDataCollector():
     async def refresh(self):
         """Asynchronous background refreshing task."""
         while True:
-            await self.read_data()
-            await asyncio.sleep(self.scan_interval)
+            try:
+                await self.read_data()
+                await asyncio.sleep(self.scan_interval)
+            except Exception as e:
+                LOGGER.warning("Refresh loop exception : %s", e)
+                self.connected = False
 
     async def send_data(self, data: bytes) -> None:
         LOGGER.debug("-> %s", ''.join(format(x, '02x') for x in data))
-        self.writer.write(data)
-        await self.writer.drain()
+        try:
+            self.writer.write(data)
+            await self.writer.drain()
+        except Exception as e:
+            LOGGER.warning("Error while writing: %s", e)
+            self.connected = False
     
     async def get_packet(self) -> bytearray:
         sbuf = bytearray()
@@ -189,7 +197,7 @@ class CMDataCollector():
                     if result is not None:
                         res = result
                         finished = True
-            except SerialException as ex:
+            except Exception as ex:
                 LOGGER.warning(ex)
                 self.connected = False
                 return None
@@ -227,6 +235,9 @@ class CMDataCollector():
     def get_current(self) -> float | None:
         """ Returns latest realtime current transmitted by the device """
         
+        if not self.connected:
+            return None
+
         if self._data is None:
             return None
         
