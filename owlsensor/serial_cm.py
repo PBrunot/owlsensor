@@ -202,6 +202,11 @@ class CMDataCollector():
                 self.connected = False
                 return None
 
+        # consistency check
+        if res[CURRENT] < 0.0 or res[CURRENT] > 100.0:
+            LOGGER.warning("Inconsistent data: %s", res)
+            return None
+        
         self._data = res
         self.last_poll = asyncio.get_event_loop().time()
         return res

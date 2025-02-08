@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(name='owlsensor',
-      version='0.4.0',
+      version='0.4.1',
       description='Library to read data from OWL Energy meters',
       long_description='This package is designed for integrating into Home Assistant a serial-connected OWL energy meter.',
       long_description_content_type = 'text/x-rst',
