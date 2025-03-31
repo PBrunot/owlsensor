@@ -80,7 +80,7 @@ class CMDataCollector():
                 stopbits=STOPBITS_ONE,
                 timeout=1,
                 write_timeout=1,
-                exclusive=True
+                exclusive=False
             )
         except Exception as ex:
             LOGGER.warning("Connect: %s", ex)
