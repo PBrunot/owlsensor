@@ -175,21 +175,10 @@ class CMDataCollector():
             self.connected = False
 
     async def get_packet(self) -> bytearray:
-        sbuf = bytearray()
         """Read from the serial port until a valid packet is formed."""
         starttime = asyncio.get_event_loop().time()
         valid_start_bytes = {PACKET_ID_HISTORY, PACKET_ID_HISTORY_DATA, PACKET_ID_REALTIME}
 
-        while len(sbuf) < self.record_length:
-            elapsed = asyncio.get_event_loop().time() - starttime
-            if elapsed > self.timeout:
-                LOGGER.error("Timeout waiting for data")
-                return bytearray()
-
-            try:
-                data_bytes = await self.reader.readexactly(1)
-                if len(data_bytes) == 0:
-                    LOGGER.warning("Timeout on data on serial")
         try:
             # 1. Synchronize by finding a valid start byte
             while True:
@@ -197,17 +186,12 @@ class CMDataCollector():
                 if elapsed > self.timeout:
                     LOGGER.warning("Timeout waiting for a valid packet start byte.")
                     return bytearray()
-                sbuf += data_bytes
-            except asyncio.IncompleteReadError:
-                LOGGER.warning("Timeout on data on serial")
-                return bytearray()
                 start_byte_data = await self.reader.readexactly(1)
                 if start_byte_data[0] in valid_start_bytes:
                     break  # Found start byte, exit sync loop
                 else:
                     LOGGER.debug("Discarding unexpected byte for sync: %02x", start_byte_data[0])
 
-        return sbuf
             # 2. Read the rest of the packet
             sbuf = bytearray(start_byte_data)
             bytes_to_read = self.record_length - 1
