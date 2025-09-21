@@ -176,7 +176,9 @@ class CMDataCollector():
 
     async def get_packet(self) -> bytearray:
         sbuf = bytearray()
+        """Read from the serial port until a valid packet is formed."""
         starttime = asyncio.get_event_loop().time()
+        valid_start_bytes = {PACKET_ID_HISTORY, PACKET_ID_HISTORY_DATA, PACKET_ID_REALTIME}
 
         while len(sbuf) < self.record_length:
             elapsed = asyncio.get_event_loop().time() - starttime
@@ -188,13 +190,38 @@ class CMDataCollector():
                 data_bytes = await self.reader.readexactly(1)
                 if len(data_bytes) == 0:
                     LOGGER.warning("Timeout on data on serial")
+        try:
+            # 1. Synchronize by finding a valid start byte
+            while True:
+                elapsed = asyncio.get_event_loop().time() - starttime
+                if elapsed > self.timeout:
+                    LOGGER.warning("Timeout waiting for a valid packet start byte.")
                     return bytearray()
                 sbuf += data_bytes
             except asyncio.IncompleteReadError:
                 LOGGER.warning("Timeout on data on serial")
                 return bytearray()
+                start_byte_data = await self.reader.readexactly(1)
+                if start_byte_data[0] in valid_start_bytes:
+                    break  # Found start byte, exit sync loop
+                else:
+                    LOGGER.debug("Discarding unexpected byte for sync: %02x", start_byte_data[0])
 
         return sbuf
+            # 2. Read the rest of the packet
+            sbuf = bytearray(start_byte_data)
+            bytes_to_read = self.record_length - 1
+            remaining_bytes = await self.reader.readexactly(bytes_to_read)
+            sbuf.extend(remaining_bytes)
+            return sbuf
+
+        except asyncio.IncompleteReadError:
+            LOGGER.warning("Timeout on serial read.")
+            return bytearray()
+        except Exception as e:
+            LOGGER.error("Unexpected error while reading packet: %s", e)
+            self.connected = False
+            return bytearray()
 
     async def parse_packet(self, buffer: bytearray) -> dict | None:
         if len(buffer) != self.record_length:
@@ -208,21 +235,21 @@ class CMDataCollector():
             LOGGER.error("Failed to decode buffer: %s", e)
             return None
 
-        if ID_REPLY in str_buffer:
-            LOGGER.info("Device found (%s)", str_buffer)
-            self.device_found = True
-            self.device_state = DeviceState.IdentifierReceived
-
         if buffer[0] == PACKET_ID_HISTORY:
-            if self.device_found:
-                if ID_WAIT_HISTORY in str_buffer:
-                    # This is a "wait" packet during history transmission.
-                    # The device is waiting for us to acknowledge. Send CONTINUE.
+            if ID_REPLY in str_buffer:
+                LOGGER.info("Device found (%s)", str_buffer)
+                self.device_found = True
+                self.device_state = DeviceState.IdentifierReceived
+                # This is the initial "history available" packet.
+                # We request the device to start sending.
+                await self.send_data(START_REQUEST)
+            elif ID_WAIT_HISTORY in str_buffer:
+                # This is a "wait" packet during history transmission.
+                # The device is waiting for us to acknowledge. Send CONTINUE.
+                if self.device_found:
                     await self.send_data(CONTINUE_REQUEST)
                 else:
-                    # This is the initial "history available" packet.
-                    # We request the device to start sending.
-                    await self.send_data(START_REQUEST)
+                    LOGGER.warning("Received WAIT packet before device was identified. Ignoring.")
         elif buffer[0] == PACKET_ID_REALTIME:
             LOGGER.info("Realtime data received")
             # Mark historical data as complete when switching to realtime
