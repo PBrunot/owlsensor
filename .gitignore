@@ -5,3 +5,4 @@ owlsensor.egg-info
 .settings
 .DS_Store
 /.vs
+tmp/
