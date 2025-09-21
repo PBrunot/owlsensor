@@ -202,7 +202,7 @@ class CMDataCollector():
 
         LOGGER.debug("<- %s", ''.join(format(x, '02x') for x in buffer))
         try:
-            str_buffer = buffer[1:10].decode("cp850", errors='replace')
+            str_buffer = buffer[1:11].decode("cp850", errors='replace')
         except (UnicodeDecodeError, IndexError) as e:
             LOGGER.error("Failed to decode buffer: %s", e)
             return None
