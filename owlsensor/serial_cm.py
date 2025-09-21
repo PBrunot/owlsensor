@@ -76,6 +76,8 @@ class CMDataCollector():
         self._connect_retry_interval = 5  # seconds
         self._historical_data: List[Dict] = []
         self._historical_complete = False
+        self._last_historical_packet_time = None
+        self._historical_timeout = 5.0  # seconds - timeout for historical data completion
 
     async def disconnect(self):
         """Disconnect and cleanup resources."""
@@ -208,9 +210,13 @@ class CMDataCollector():
         if ID_REPLY in str_buffer:
             LOGGER.info("Device found (%s)", str_buffer)
             self.device_found = True
+            self.device_state = DEVICE_STATES["IdentifierReceived"]
 
         if self.device_found and ID_WAIT_HISTORY in str_buffer:
             await self.send_data(CONTINUE_REQUEST)
+            # Reset historical data collection state
+            if not self._historical_complete:
+                self._last_historical_packet_time = asyncio.get_event_loop().time()
 
         if buffer[0] == PACKET_ID_HISTORY:
             if self.device_found:
@@ -231,6 +237,19 @@ class CMDataCollector():
             if historical_data:
                 self._historical_data.append(historical_data)
                 LOGGER.debug("Historical data: %s", historical_data)
+                self._last_historical_packet_time = asyncio.get_event_loop().time()
+
+        # Check for historical data completion based on timeout
+        if (self.device_state == DEVICE_STATES["TransmittingHistory"] and
+            not self._historical_complete and
+            self._last_historical_packet_time is not None):
+
+            current_time = asyncio.get_event_loop().time()
+            if current_time - self._last_historical_packet_time > self._historical_timeout:
+                LOGGER.info("Historical data collection complete due to timeout. %d records.",
+                           len(self._historical_data))
+                self._historical_complete = True
+                self.device_state = DEVICE_STATES["TransmittingRealtime"]
 
         return None
 
@@ -371,6 +390,7 @@ class CMDataCollector():
         """Clear the collected historical data."""
         self._historical_data.clear()
         self._historical_complete = False
+        self._last_historical_packet_time = None
 
     def is_historical_data_complete(self) -> bool:
         """Check if historical data collection is complete.
@@ -378,3 +398,29 @@ class CMDataCollector():
         Returns True when device transitions from TransmittingHistory to TransmittingRealtime
         """
         return self._historical_complete
+
+    def get_device_state(self) -> str:
+        """Get the current device communication state.
+
+        Returns:
+            str: Current state name ("Unknown", "IdentifierReceived",
+                 "TransmittingHistory", "TransmittingRealtime")
+        """
+        for state_name, state_value in DEVICE_STATES.items():
+            if state_value == self.device_state:
+                return state_name
+        return "Unknown"
+
+    def get_device_state_info(self) -> dict:
+        """Get detailed device state information.
+
+        Returns:
+            dict: Contains state, historical_count, historical_complete, connected
+        """
+        return {
+            "state": self.get_device_state(),
+            "historical_count": len(self._historical_data),
+            "historical_complete": self._historical_complete,
+            "connected": self.connected,
+            "device_found": self.device_found
+        }

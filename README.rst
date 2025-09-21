@@ -162,6 +162,37 @@ For Home Assistant component developers:
                 current_data = await sensor.read_data()
                 # Process real-time data...
 
+Device State Monitoring
+=======================
+
+The library now provides access to the internal communication state machine for debugging and monitoring:
+
+``get_device_state() -> str``
+    Returns the current device communication state:
+
+    * ``"Unknown"``: Initial state, device not yet identified
+    * ``"IdentifierReceived"``: Device found and identified
+    * ``"TransmittingHistory"``: Historical data transmission in progress
+    * ``"TransmittingRealtime"``: Real-time data transmission active
+
+``get_device_state_info() -> dict``
+    Returns detailed state information including:
+
+    * ``state``: Current state name
+    * ``historical_count``: Number of historical records collected
+    * ``historical_complete``: Boolean indicating if historical collection is done
+    * ``connected``: Connection status
+    * ``device_found``: Whether device has been identified
+
+.. code-block:: python
+
+    # Monitor device state during connection
+    async with cm.CMDataCollector(port, cm.SUPPORTED_SENSORS["CM160"]) as sensor:
+        while sensor.get_device_state() != "TransmittingRealtime":
+            state_info = sensor.get_device_state_info()
+            print(f"State: {state_info['state']}, Historical: {state_info['historical_count']}")
+            await asyncio.sleep(1)
+
 Device Behavior
 ===============
 
@@ -171,3 +202,8 @@ Device Behavior
 * Each packet contains: timestamp (year, month, day, hour, minute) and current reading
 * Real-time data begins after historical transmission completes
 * Device sends real-time updates approximately every 5 seconds
+
+Bug Fixes
+==========
+
+**v0.5.1**: Fixed critical bug where CM160 device would get stuck in historical sync mode after Home Assistant reboot. The device would continuously send handshake messages without transitioning to real-time mode. This was resolved by implementing timeout-based historical data completion detection, following the reference implementation pattern. The fix ensures reliable historical-to-realtime transition and improved protocol state machine handling.
