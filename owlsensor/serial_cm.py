@@ -16,6 +16,7 @@ from .const import (
     RECORD_LENGTH, CURRENT, BAUD_RATE, BYTE_ORDER, LSB, MSB,
     MULTIPLIER, TIMEOUT
 )
+from enum import Enum
 
 
 # Owl CM160 settings
@@ -32,12 +33,11 @@ SUPPORTED_SENSORS = {
     "CM160": OWL_CM160
 }
 
-DEVICE_STATES = {
-    "Unknown": 0,
-    "IdentifierReceived": 1,
-    "TransmittingHistory": 2,
-    "TransmittingRealtime": 3
-}
+class DeviceState(Enum):
+    Unknown = 0
+    IdentifierReceived = 1
+    TransmittingHistory = 2
+    TransmittingRealtime = 3
 
 CMVALS=[CURRENT]
 
@@ -64,7 +64,7 @@ class CMDataCollector():
         self.config = configuration
         self._data = None
         self.last_poll = None
-        self.device_state = DEVICE_STATES["Unknown"]
+        self.device_state = DeviceState.Unknown
         self.device_found = False
         self.serialdevice = serialdevice
         self.reader = None
@@ -210,7 +210,7 @@ class CMDataCollector():
         if ID_REPLY in str_buffer:
             LOGGER.info("Device found (%s)", str_buffer)
             self.device_found = True
-            self.device_state = DEVICE_STATES["IdentifierReceived"]
+            self.device_state = DeviceState.IdentifierReceived
 
         if buffer[0] == PACKET_ID_HISTORY:
             if self.device_found:
@@ -225,15 +225,15 @@ class CMDataCollector():
         elif buffer[0] == PACKET_ID_REALTIME:
             LOGGER.info("Realtime data received")
             # Mark historical data as complete when switching to realtime
-            if self.device_state == DEVICE_STATES["TransmittingHistory"]:
+            if self.device_state == DeviceState.TransmittingHistory:
                 self._historical_complete = True
                 LOGGER.info("Historical data collection complete. %d records collected.",
                            len(self._historical_data))
-            self.device_state = DEVICE_STATES["TransmittingRealtime"]
+            self.device_state = DeviceState.TransmittingRealtime
             res = self.parse_buffer(buffer)
             return res
         elif buffer[0] == PACKET_ID_HISTORY_DATA:
-            self.device_state = DEVICE_STATES["TransmittingHistory"]
+            self.device_state = DeviceState.TransmittingHistory
             historical_data = self._parse_historical_packet(buffer)
             if historical_data:
                 self._historical_data.append(historical_data)
@@ -241,7 +241,7 @@ class CMDataCollector():
                 self._last_historical_packet_time = asyncio.get_event_loop().time()
 
         # Check for historical data completion based on timeout
-        if (self.device_state == DEVICE_STATES["TransmittingHistory"] and
+        if (self.device_state == DeviceState.TransmittingHistory and
             not self._historical_complete and
             self._last_historical_packet_time is not None):
 
@@ -250,7 +250,7 @@ class CMDataCollector():
                 LOGGER.info("Historical data collection complete due to timeout. %d records.",
                            len(self._historical_data))
                 self._historical_complete = True
-                self.device_state = DEVICE_STATES["TransmittingRealtime"]
+                self.device_state = DeviceState.TransmittingRealtime
 
         return None
 
@@ -334,14 +334,16 @@ class CMDataCollector():
             hour = buffer[4]
             minute = buffer[5]
 
-            # Current calculation: frame[8] + (frame[9] << 8) * 0.07
-            current_raw = buffer[8] + (buffer[9] << 8)
-            current = round(current_raw * self.multiplier, 1)
+            # Parse current value using the common buffer parser
+            parsed_values = self.parse_buffer(buffer)
+            current = parsed_values.get(CURRENT)
 
             # Validate date/time values
-            if not (1 <= month <= 12 and 1 <= day <= 31 and 0 <= hour <= 23 and 0 <= minute <= 59):
-                LOGGER.warning("Invalid timestamp in historical data: %d-%d-%d %d:%d",
-                             year, month, day, hour, minute)
+            if not (1 <= month <= 12 and 1 <= day <= 31 and 0 <= hour <= 23 and 0 <= minute <= 59) or current is None:
+                LOGGER.warning(
+                    "Invalid data in historical packet: Y:%d M:%d D:%d H:%d m:%d C:%s",
+                    year, month, day, hour, minute, current
+                )
                 return None
 
             # Create datetime object
@@ -402,13 +404,9 @@ class CMDataCollector():
         """Get the current device communication state.
 
         Returns:
-            str: Current state name ("Unknown", "IdentifierReceived",
-                 "TransmittingHistory", "TransmittingRealtime")
+            str: Current state name
         """
-        for state_name, state_value in DEVICE_STATES.items():
-            if state_value == self.device_state:
-                return state_name
-        return "Unknown"
+        return self.device_state.name
 
     def get_device_state_info(self) -> dict:
         """Get detailed device state information.
