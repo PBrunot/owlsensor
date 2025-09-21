@@ -77,7 +77,7 @@ class CMDataCollector():
         self._historical_data: List[Dict] = []
         self._historical_complete = False
         self._last_historical_packet_time = None
-        self._historical_timeout = 5.0  # seconds - timeout for historical data completion
+        self._historical_timeout = 90.0  # seconds - timeout for historical data completion
 
     async def disconnect(self):
         """Disconnect and cleanup resources."""
@@ -388,10 +388,8 @@ class CMDataCollector():
         return self._historical_data.copy()
 
     def clear_historical_data(self) -> None:
-        """Clear the collected historical data."""
+        """Clear the collected historical data buffer."""
         self._historical_data.clear()
-        self._historical_complete = False
-        self._last_historical_packet_time = None
 
     def is_historical_data_complete(self) -> bool:
         """Check if historical data collection is complete.
