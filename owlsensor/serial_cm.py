@@ -212,15 +212,16 @@ class CMDataCollector():
             self.device_found = True
             self.device_state = DEVICE_STATES["IdentifierReceived"]
 
-        if self.device_found and ID_WAIT_HISTORY in str_buffer:
-            await self.send_data(CONTINUE_REQUEST)
-            # Reset historical data collection state
-            if not self._historical_complete:
-                self._last_historical_packet_time = asyncio.get_event_loop().time()
-
         if buffer[0] == PACKET_ID_HISTORY:
             if self.device_found:
-                await self.send_data(START_REQUEST)
+                if ID_WAIT_HISTORY in str_buffer:
+                    # This is a "wait" packet during history transmission.
+                    # The device is waiting for us to acknowledge. Send CONTINUE.
+                    await self.send_data(CONTINUE_REQUEST)
+                else:
+                    # This is the initial "history available" packet.
+                    # We request the device to start sending.
+                    await self.send_data(START_REQUEST)
         elif buffer[0] == PACKET_ID_REALTIME:
             LOGGER.info("Realtime data received")
             # Mark historical data as complete when switching to realtime

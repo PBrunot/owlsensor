@@ -18,7 +18,10 @@ async def collect_historical_data(port):
     """Collect and display historical data from CM160 device."""
     print(f"Connecting to CM160 device on {port}...")
 
-    async with cm.CMDataCollector(port, cm.SUPPORTED_SENSORS["CM160"]) as sensor:
+    # Use a scan_interval to run data collection in a background task.
+    # This allows us to poll the sensor state while it's processing data.
+    async with cm.CMDataCollector(
+        port, cm.SUPPORTED_SENSORS["CM160"], scan_interval=1) as sensor:
         print("Connected! Waiting for historical data...")
 
         # Wait for historical data collection to complete
