@@ -78,6 +78,7 @@ class CMDataCollector():
         self._historical_complete = False
         self._last_historical_packet_time = None
         self._historical_timeout = 90.0  # seconds - timeout for historical data completion
+        self._read_lock = asyncio.Lock()
 
     async def disconnect(self):
         """Disconnect and cleanup resources."""
@@ -257,45 +258,50 @@ class CMDataCollector():
     async def read_data(self) -> dict | None:
         """Read data from the serial interface asynchronously."""
 
-        if not self.connected:
-            current_time = time.time()
-            if current_time - self._last_connect_attempt < self._connect_retry_interval:
-                return None
+        async with self._read_lock:
+            if not self.connected:
+                current_time = time.time()
+                if current_time - self._last_connect_attempt < self._connect_retry_interval:
+                    return None
 
-            self._last_connect_attempt = current_time
-            if not await self.connect():
-                return None
+                self._last_connect_attempt = current_time
+                if not await self.connect():
+                    return None
 
-        mytime = asyncio.get_event_loop().time()
-        if (self.last_poll is not None) and \
-           (mytime - self.last_poll) <= 15 and \
-           self._data is not None:
-            return self._data
+            mytime = asyncio.get_event_loop().time()
+            if (self.last_poll is not None) and \
+               (mytime - self.last_poll) <= 15 and \
+               self._data is not None:
+                return self._data
 
-        res = None
-        finished = False
+            res = None
+            finished = False
 
-        while not finished:
-            try:
-                packet = await self.get_packet()
-                if packet:
+            while not finished:
+                try:
+                    packet = await self.get_packet()
+                    if not packet:
+                        LOGGER.debug("Failed to get packet (timeout).")
+                        return None
+
                     result = await self.parse_packet(packet)
                     if result is not None:
                         res = result
                         finished = True
-            except Exception as ex:
-                LOGGER.warning(ex)
-                self.connected = False
+                except Exception as ex:
+                    LOGGER.warning("Exception during packet read: %s", ex)
+                    self.connected = False
+                    return None
+
+            # consistency check
+            if res is None or res.get(CURRENT) is None or not (0.0 <= res[CURRENT] <= 100.0):
+                if res is not None:
+                    LOGGER.warning("Inconsistent data: %s", res)
                 return None
 
-        # consistency check
-        if res[CURRENT] < 0.0 or res[CURRENT] > 100.0:
-            LOGGER.warning("Inconsistent data: %s", res)
-            return None
-
-        self._data = res
-        self.last_poll = asyncio.get_event_loop().time()
-        return res
+            self._data = res
+            self.last_poll = asyncio.get_event_loop().time()
+            return res
 
     def parse_buffer(self, sbuf) -> dict:
         """Parse the buffer and return the CM values."""
