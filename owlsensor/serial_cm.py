@@ -5,6 +5,8 @@ Reading data from particulate matter sensors with a serial interface.
 import time
 import logging
 import asyncio
+from datetime import datetime
+from typing import List, Dict, Optional
 from serial import EIGHTBITS, PARITY_NONE, STOPBITS_ONE
 import serial_asyncio_fast
 
@@ -72,6 +74,8 @@ class CMDataCollector():
         self.update_task = None
         self._last_connect_attempt = 0
         self._connect_retry_interval = 5  # seconds
+        self._historical_data: List[Dict] = []
+        self._historical_complete = False
 
     async def disconnect(self):
         """Disconnect and cleanup resources."""
@@ -125,9 +129,9 @@ class CMDataCollector():
             LOGGER.warning("Failed to connect: %s", ex)
             self.connected = False
             return False
-        
+
         self.connected = True
-        
+
         # Stimulate the device
         await self.send_data(CONTINUE_REQUEST)
 
@@ -140,7 +144,7 @@ class CMDataCollector():
 
         if self.scan_interval > 0:
             self.update_task = asyncio.create_task(self.refresh())
-        
+
         LOGGER.info("Connection to %s successful", self.serialdevice)
         return True
 
@@ -166,7 +170,7 @@ class CMDataCollector():
         except Exception as e:
             LOGGER.warning("Error while writing: %s", e)
             self.connected = False
-    
+
     async def get_packet(self) -> bytearray:
         sbuf = bytearray()
         starttime = asyncio.get_event_loop().time()
@@ -213,11 +217,20 @@ class CMDataCollector():
                 await self.send_data(START_REQUEST)
         elif buffer[0] == PACKET_ID_REALTIME:
             LOGGER.info("Realtime data received")
+            # Mark historical data as complete when switching to realtime
+            if self.device_state == DEVICE_STATES["TransmittingHistory"]:
+                self._historical_complete = True
+                LOGGER.info("Historical data collection complete. %d records collected.",
+                           len(self._historical_data))
             self.device_state = DEVICE_STATES["TransmittingRealtime"]
             res = self.parse_buffer(buffer)
             return res
         elif buffer[0] == PACKET_ID_HISTORY_DATA:
             self.device_state = DEVICE_STATES["TransmittingHistory"]
+            historical_data = self._parse_historical_packet(buffer)
+            if historical_data:
+                self._historical_data.append(historical_data)
+                LOGGER.debug("Historical data: %s", historical_data)
 
         return None
 
@@ -259,7 +272,7 @@ class CMDataCollector():
         if res[CURRENT] < 0.0 or res[CURRENT] > 100.0:
             LOGGER.warning("Inconsistent data: %s", res)
             return None
-        
+
         self._data = res
         self.last_poll = asyncio.get_event_loop().time()
         return res
@@ -281,6 +294,48 @@ class CMDataCollector():
 
         return res
 
+    def _parse_historical_packet(self, buffer: bytearray) -> Optional[Dict]:
+        """Parse historical data packet from CM160 device."""
+        if len(buffer) != self.record_length:
+            return None
+
+        try:
+            # Validate checksum
+            checksum = sum(buffer[0:10]) & 0xff
+            if checksum != buffer[10]:
+                LOGGER.warning("Invalid checksum in historical packet")
+                return None
+
+            # Extract timestamp and current data
+            # Based on reference implementation: frame[1-5] = year, month, day, hour, min
+            year = buffer[1] + 2000
+            month = buffer[2] & 0xf  # Mask out upper bits as per reference
+            day = buffer[3]
+            hour = buffer[4]
+            minute = buffer[5]
+
+            # Current calculation: frame[8] + (frame[9] << 8) * 0.07
+            current_raw = buffer[8] + (buffer[9] << 8)
+            current = round(current_raw * self.multiplier, 1)
+
+            # Validate date/time values
+            if not (1 <= month <= 12 and 1 <= day <= 31 and 0 <= hour <= 23 and 0 <= minute <= 59):
+                LOGGER.warning("Invalid timestamp in historical data: %d-%d-%d %d:%d",
+                             year, month, day, hour, minute)
+                return None
+
+            # Create datetime object
+            timestamp = datetime(year, month, day, hour, minute)
+
+            return {
+                "timestamp": timestamp,
+                "current": current
+            }
+
+        except (ValueError, OverflowError) as e:
+            LOGGER.warning("Error parsing historical packet: %s", e)
+            return None
+
     def supported_values(self) -> list:
         """Returns the list of supported values for the actual device"""
         res = []
@@ -289,17 +344,37 @@ class CMDataCollector():
             if offset is not None:
                 res.append(pmname)
         return res
-    
+
     def get_current(self) -> float | None:
         """ Returns latest realtime current transmitted by the device """
-        
+
         if not self.connected:
             return None
 
         if self._data is None:
             return None
-        
+
         if CURRENT in self._data:
             return self._data[CURRENT]
-        
+
         return None
+
+    def get_historical_data(self) -> List[Dict]:
+        """Return the collected historical data as a list of timestamped current readings.
+
+        Returns:
+            List of dictionaries with 'timestamp' (datetime) and 'current' (float) keys
+        """
+        return self._historical_data.copy()
+
+    def clear_historical_data(self) -> None:
+        """Clear the collected historical data."""
+        self._historical_data.clear()
+        self._historical_complete = False
+
+    def is_historical_data_complete(self) -> bool:
+        """Check if historical data collection is complete.
+
+        Returns True when device transitions from TransmittingHistory to TransmittingRealtime
+        """
+        return self._historical_complete
