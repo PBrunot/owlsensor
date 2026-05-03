@@ -18,6 +18,6 @@ setup(name='owlsensor',
           'Programming Language :: Python :: 3.10'
       ],
       packages=find_packages(),
-      install_requires=['pyserial-asyncio-fast>=0.16'],
+      install_requires=['pyserial-asyncio-fast>=0.16,<2.0'],
       keywords='serial owl cm160 energy_meter homeautomation',
       zip_safe=False)

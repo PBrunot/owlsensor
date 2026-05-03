@@ -214,9 +214,12 @@ class CMDataCollector():
 
         LOGGER.debug("<- %s", ''.join(format(x, '02x') for x in buffer))
         try:
-            str_buffer = buffer[1:11].decode("cp850", errors='replace')
-        except (UnicodeDecodeError, IndexError) as e:
-            LOGGER.error("Failed to decode buffer: %s", e)
+            str_buffer = buffer[1:11].decode("cp850")
+        except UnicodeDecodeError as e:
+            LOGGER.error("Failed to decode buffer (invalid cp850 bytes): %s", e)
+            return None
+        except IndexError as e:
+            LOGGER.error("Failed to decode buffer (unexpected length): %s", e)
             return None
 
         if buffer[0] == PACKET_ID_HISTORY:
