@@ -231,7 +231,7 @@ class TestConnect:
     @pytest.mark.asyncio
     async def test_connect_success(self):
         c = CMDataCollector("/dev/ttyUSB0", CONFIG)
-        with patch("serialx.open_serial_connection", new_callable=AsyncMock) as mock_open:
+        with patch("serial_asyncio_fast.open_serial_connection", new_callable=AsyncMock) as mock_open:
             mock_open.return_value = (AsyncMock(), _make_writer())
             result = await c.connect()
         assert result is True
@@ -240,7 +240,7 @@ class TestConnect:
     @pytest.mark.asyncio
     async def test_connect_oserror_returns_false(self):
         c = CMDataCollector("/dev/ttyUSB0", CONFIG)
-        with patch("serialx.open_serial_connection", new_callable=AsyncMock) as mock_open:
+        with patch("serial_asyncio_fast.open_serial_connection", new_callable=AsyncMock) as mock_open:
             mock_open.side_effect = OSError("no device")
             result = await c.connect()
         assert result is False
@@ -249,7 +249,7 @@ class TestConnect:
     @pytest.mark.asyncio
     async def test_connect_timeout_returns_false(self):
         c = CMDataCollector("/dev/ttyUSB0", CONFIG)
-        with patch("serialx.open_serial_connection", new_callable=AsyncMock) as mock_open:
+        with patch("serial_asyncio_fast.open_serial_connection", new_callable=AsyncMock) as mock_open:
             mock_open.side_effect = TimeoutError()
             result = await c.connect()
         assert result is False
@@ -257,10 +257,10 @@ class TestConnect:
 
     @pytest.mark.asyncio
     async def test_connect_serial_exception_returns_false(self):
-        import serialx
+        from serial import SerialException
         c = CMDataCollector("/dev/ttyUSB0", CONFIG)
-        with patch("serialx.open_serial_connection", new_callable=AsyncMock) as mock_open:
-            mock_open.side_effect = serialx.SerialException("backend error")
+        with patch("serial_asyncio_fast.open_serial_connection", new_callable=AsyncMock) as mock_open:
+            mock_open.side_effect = SerialException("backend error")
             result = await c.connect()
         assert result is False
         assert c.connected is False
@@ -268,7 +268,7 @@ class TestConnect:
     @pytest.mark.asyncio
     async def test_connect_calls_open_with_correct_baudrate(self):
         c = CMDataCollector("/dev/ttyUSB0", CONFIG)
-        with patch("serialx.open_serial_connection", new_callable=AsyncMock) as mock_open:
+        with patch("serial_asyncio_fast.open_serial_connection", new_callable=AsyncMock) as mock_open:
             mock_open.return_value = (AsyncMock(), _make_writer())
             await c.connect()
         _, kwargs = mock_open.call_args
@@ -296,7 +296,7 @@ class TestDisconnect:
     @pytest.mark.asyncio
     async def test_context_manager_disconnects_on_exit(self):
         c = CMDataCollector("/dev/ttyUSB0", CONFIG)
-        with patch("serialx.open_serial_connection", new_callable=AsyncMock) as mock_open:
+        with patch("serial_asyncio_fast.open_serial_connection", new_callable=AsyncMock) as mock_open:
             mock_open.return_value = (AsyncMock(), _make_writer())
             async with c:
                 assert c.connected is True

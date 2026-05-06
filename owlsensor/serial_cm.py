@@ -7,7 +7,8 @@ import logging
 import asyncio
 from datetime import datetime
 from typing import List, Dict, Optional
-import serialx
+from serial import EIGHTBITS, PARITY_NONE, STOPBITS_ONE, SerialException
+import serial_asyncio_fast
 
 from .const import (
     ID_REPLY, ID_WAIT_HISTORY, CONTINUE_REQUEST, START_REQUEST,
@@ -117,16 +118,17 @@ class CMDataCollector():
         """Establish the serial connection asynchronously."""
         self.connected = False
         try:
-            self.reader, self.writer = await serialx.open_serial_connection(
-                self.serialdevice,
+            self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(
+                url=self.serialdevice,
                 baudrate=self.baudrate,
-                parity=serialx.Parity.NONE,
-                stopbits=serialx.StopBits.ONE,
-                byte_size=8,
-                read_timeout=1,
+                parity=PARITY_NONE,
+                bytesize=EIGHTBITS,
+                stopbits=STOPBITS_ONE,
+                timeout=1,
                 write_timeout=1,
+                exclusive=False,
             )
-        except (OSError, TimeoutError, serialx.SerialException) as ex:
+        except (OSError, TimeoutError, SerialException) as ex:
             LOGGER.warning("Failed to connect: %s", ex)
             self.connected = False
             return False
@@ -200,7 +202,7 @@ class CMDataCollector():
         except asyncio.IncompleteReadError:
             LOGGER.warning("Timeout on serial read.")
             return bytearray()
-        except (OSError, TimeoutError, serialx.SerialException) as e:
+        except (OSError, TimeoutError, SerialException) as e:
             LOGGER.error("Unexpected error while reading packet: %s", e)
             self.connected = False
             return bytearray()
@@ -300,7 +302,7 @@ class CMDataCollector():
                     if result is not None:
                         res = result
                         finished = True
-                except (OSError, TimeoutError, serialx.SerialException) as ex:
+                except (OSError, TimeoutError, SerialException) as ex:
                     LOGGER.warning("Exception during packet read: %s", ex)
                     self.connected = False
                     return None
