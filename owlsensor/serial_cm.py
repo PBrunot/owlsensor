@@ -7,8 +7,8 @@ import logging
 import asyncio
 from datetime import datetime
 from typing import List, Dict, Optional
-from serial import EIGHTBITS, PARITY_NONE, STOPBITS_ONE, SerialException
-import serial_asyncio_fast
+from serialx import Parity, StopBits, SerialException
+import serialx
 
 from .const import (
     ID_REPLY, ID_WAIT_HISTORY, CONTINUE_REQUEST, START_REQUEST,
@@ -118,13 +118,13 @@ class CMDataCollector():
         """Establish the serial connection asynchronously."""
         self.connected = False
         try:
-            self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(
-                url=self.serialdevice,
+            self.reader, self.writer = await serialx.open_serial_connection(
+                self.serialdevice,
                 baudrate=self.baudrate,
-                parity=PARITY_NONE,
-                bytesize=EIGHTBITS,
-                stopbits=STOPBITS_ONE,
-                timeout=1,
+                parity=Parity.NONE,
+                byte_size=8,
+                stopbits=StopBits.ONE,
+                read_timeout=1,
                 write_timeout=1,
                 exclusive=False,
             )
