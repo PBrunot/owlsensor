@@ -124,7 +124,7 @@ class CMDataCollector():
                 parity=Parity.NONE,
                 byte_size=8,
                 stopbits=StopBits.ONE,
-                read_timeout=1,
+                read_timeout=0,
                 write_timeout=1,
                 exclusive=False,
             )
