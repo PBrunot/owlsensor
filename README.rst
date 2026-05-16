@@ -1,209 +1,272 @@
-owlsensor - Library for OWL CM 160 Energy Meter
+owlsensor - Library for OWL CM160 Energy Meter
 ================================================
 
-This library lets you read sensor data from serial-connected OWL Energy meters.
-It currently supports the following model:
+Python async library for reading sensor data from the OWL Energy Monitor CM160 via serial port.
+Supports real-time current readings and full historical data collection.
 
-- CM 160
+**Current version**: 0.7.2 | **Python**: 3.10+ | **Dependency**: ``serialx>=1.7.2``
 
-Usage
-=====
+Supported devices:
 
-Create a CMDataCollector with the port name as the first argument and the OWL model as the second argument:
+- OWL CM160 (250 000 baud, USB-serial)
+
+Installation
+============
+
+.. code-block:: bash
+
+    pip install owlsensor
+
+Requires ``serialx>=1.7.2``, which supports non-POSIX baud rates (250 000 baud) on all platforms.
+
+Quick Start
+===========
 
 .. code-block:: python
 
+    import asyncio
     import owlsensor as cm
 
-    # Windows
-    sensor = cm.CMDataCollector("COM4", cm.SUPPORTED_SENSORS["CM160"])
+    async def main():
+        port = "/dev/ttyUSB0"   # Linux; use "COM4" on Windows
 
-    # Linux
-    sensor = cm.CMDataCollector("/dev/ttyUSB0", cm.SUPPORTED_SENSORS["CM160"])
+        async with cm.CMDataCollector(port, cm.SUPPORTED_SENSORS["CM160"]) as sensor:
+            data = await sensor.read_data()
+            print(data)  # {'Current': 4.1}
 
-You can add several devices the same way, on different serial ports.
+    asyncio.run(main())
 
-Connection will be called automatically by ``read_data()``:
+``read_data()`` waits for the device to finish its historical data burst, then returns the first
+real-time packet. Subsequent calls within 15 seconds return the cached value.
 
-.. code-block:: python
-
-    # Optional explicit connection
-    await sensor.connect()
-
-    # Read data (connects automatically if needed)
-    data = await sensor.read_data()
-
-``read_data()`` returns a dictionary containing the acquired real-time value. Currently only current in amperes is returned:
+Constructor
+===========
 
 .. code-block:: python
 
-    print(await sensor.read_data())
-    # Output: {'Current': 4.1}
+    cm.CMDataCollector(serialdevice, configuration, scan_interval=0)
 
-Recommended usage with context manager for automatic cleanup:
+Parameters:
+
+- **serialdevice** – Serial port path (``"/dev/ttyUSB0"``, ``"COM4"``, …)
+- **configuration** – Device config dict; use ``cm.SUPPORTED_SENSORS["CM160"]``
+- **scan_interval** – If > 0, starts a background asyncio task that calls ``read_data()``
+  every *scan_interval* seconds. Useful when you need historical data to arrive passively
+  while your code does other work. Default: 0 (no background task).
+
+Convenience factory:
 
 .. code-block:: python
 
-    import owlsensor as cm
+    sensor = cm.get_async_datacollector("/dev/ttyUSB0", "CM160", scan_interval_s=30)
 
-    async with cm.CMDataCollector(port, cm.SUPPORTED_SENSORS["CM160"]) as sensor:
-        data = await sensor.read_data()
-        print(data)  # {'Current': 4.1}
+API Reference
+=============
+
+Connection
+----------
+
+``await sensor.connect() -> bool``
+    Open the serial port and send the initial stimulation byte to the device.
+    Returns ``True`` on success. Called automatically by ``read_data()`` and the context manager.
+
+``await sensor.disconnect()``
+    Cancel the background refresh task (if running) and close the serial port.
+
+``async with cm.CMDataCollector(...) as sensor``
+    Preferred pattern — calls ``connect()`` on entry and ``disconnect()`` on exit.
+
+Real-time Data
+--------------
+
+``await sensor.read_data() -> dict | None``
+    Returns the latest real-time packet from the device, or ``None`` on timeout/error.
+    Results are cached for 15 seconds (the device's natural update interval).
+
+    Return value (real-time):
+
+    .. code-block:: python
+
+        {'Current': 4.1}   # key is 'Current' with a capital C; value is amperes (float)
+
+``sensor.get_current() -> float | None``
+    Synchronous convenience wrapper — returns the last received current value in amperes,
+    or ``None`` if not yet connected or no data received.
+
+Historical Data
+---------------
+
+``sensor.get_historical_data() -> list[dict]``
+    Returns a copy of all historical records collected during device initialisation.
+
+    Each record:
+
+    .. code-block:: python
+
+        {
+            'timestamp': datetime(2024, 1, 15, 10, 30),  # timezone-naive, device local time
+            'current':   3.8                             # amperes (float); key is lowercase
+        }
+
+    .. note::
+        The historical data key is ``'current'`` (lowercase), while the real-time key returned
+        by ``read_data()`` is ``'Current'`` (capital C). This reflects the internal packet
+        parsers and is intentional.
+
+``sensor.is_historical_data_complete() -> bool``
+    Returns ``True`` once the device transitions from history-transmission mode to real-time
+    mode, **or** after no new history packet arrives for 90 seconds (timeout fallback).
+
+``sensor.clear_historical_data() -> None``
+    Frees the in-memory historical buffer. Call after you have processed the data.
 
 Historical Data Collection
 ==========================
 
-The CM160 device transmits historical data during initial connection. This library now captures and provides access to this historical data for Home Assistant integration.
-
-Key Features:
-
-* Automatic collection of historical data during device initialization
-* Timestamped current readings with datetime objects
-* Home Assistant compatible data structure
-* Non-blocking collection with completion detection
+The CM160 transmits its full internal memory (typically 30 days at 5-minute intervals) during
+the handshake before switching to real-time mode.  Use ``scan_interval`` so data arrives in the
+background while you poll for completion:
 
 .. code-block:: python
 
-    import owlsensor as cm
     import asyncio
+    import owlsensor as cm
 
-    async def collect_history():
-        async with cm.CMDataCollector(port, cm.SUPPORTED_SENSORS["CM160"]) as sensor:
-            # Wait for historical data collection to complete
+    async def collect_history(port):
+        async with cm.CMDataCollector(
+            port, cm.SUPPORTED_SENSORS["CM160"], scan_interval=1
+        ) as sensor:
+
+            # Wait for all historical packets
+            timeout, start = 300, asyncio.get_event_loop().time()
             while not sensor.is_historical_data_complete():
                 await asyncio.sleep(1)
                 count = len(sensor.get_historical_data())
-                print(f"Collected {count} historical records...")
+                print(f"\rCollected {count} records...", end="", flush=True)
+                if asyncio.get_event_loop().time() - start > timeout:
+                    print("\nTimeout")
+                    break
 
-            # Get all historical data
-            historical_data = sensor.get_historical_data()
+            records = sensor.get_historical_data()
+            print(f"\n{len(records)} historical records:")
+            for r in records[-5:]:
+                print(f"  {r['timestamp'].isoformat()}: {r['current']} A")
 
-            for record in historical_data:
-                timestamp = record["timestamp"]  # datetime object
-                current = record["current"]      # float (amperes)
-                print(f"{timestamp.isoformat()}: {current}A")
-
-API Methods for Historical Data
-===============================
-
-``get_historical_data() -> List[Dict]``
-    Returns collected historical data as a list of dictionaries.
-    Each dictionary contains:
-
-    * ``timestamp``: Python datetime object
-    * ``current``: Float value in amperes
-
-``is_historical_data_complete() -> bool``
-    Returns True when historical data collection is complete.
-    This occurs when the device transitions from TransmittingHistory to TransmittingRealtime state.
-
-``clear_historical_data() -> None``
-    Clears the collected historical data from memory.
-
-Data Structure for Home Assistant
-=================================
-
-Historical data is provided in a format optimized for Home Assistant processing:
-
-.. code-block:: python
-
-    [
-        {
-            "timestamp": datetime(2024, 1, 15, 10, 30, 0),
-            "current": 4.2
-        },
-        {
-            "timestamp": datetime(2024, 1, 15, 10, 35, 0),
-            "current": 3.8
-        }
-        # ... more records
-    ]
-
-* Timestamps are timezone-naive datetime objects in device local time
-* Current values are in amperes (float)
-* Data is ordered chronologically
-* Typical collection contains several days to weeks of 5-minute interval readings
-
-Home Assistant Integration Guidelines
-====================================
-
-For Home Assistant component developers:
-
-1. **Connection**: Use context manager for automatic cleanup
-2. **Historical Collection**: Wait for ``is_historical_data_complete()`` before processing
-3. **Data Processing**: Use ``get_historical_data()`` to retrieve all timestamped readings
-4. **Memory Management**: Call ``clear_historical_data()`` after processing to free memory
-5. **Real-time Data**: Use ``read_data()`` for ongoing current readings
-
-.. code-block:: python
-
-    # Example Home Assistant integration pattern
-    async def setup_cm160_sensor(port):
-        async with cm.CMDataCollector(port, cm.SUPPORTED_SENSORS["CM160"]) as sensor:
-            # Collect historical data for Home Assistant history
-            while not sensor.is_historical_data_complete():
-                await asyncio.sleep(1)
-
-            historical_data = sensor.get_historical_data()
-
-            # Process historical data for HA database
-            for record in historical_data:
-                await hass.async_add_job(
-                    process_historical_reading,
-                    record["timestamp"],
-                    record["current"]
-                )
-
-            # Clear historical data to free memory
+            # Free memory after processing
             sensor.clear_historical_data()
 
-            # Continue with real-time readings
-            while True:
-                current_data = await sensor.read_data()
-                # Process real-time data...
+            # Now read real-time data
+            data = await sensor.read_data()
+            print(f"Current reading: {data}")
+
+    asyncio.run(collect_history("/dev/ttyUSB0"))
 
 Device State Monitoring
 =======================
 
-The library now provides access to the internal communication state machine for debugging and monitoring:
+``sensor.get_device_state() -> str``
+    Returns the current state of the protocol state machine:
 
-``get_device_state() -> str``
-    Returns the current device communication state:
+    - ``"Unknown"`` — Initial state; device not yet identified
+    - ``"IdentifierReceived"`` — Device handshake received
+    - ``"TransmittingHistory"`` — Historical packets flowing
+    - ``"TransmittingRealtime"`` — Real-time mode active
 
-    * ``"Unknown"``: Initial state, device not yet identified
-    * ``"IdentifierReceived"``: Device found and identified
-    * ``"TransmittingHistory"``: Historical data transmission in progress
-    * ``"TransmittingRealtime"``: Real-time data transmission active
+``sensor.get_device_state_info() -> dict``
+    Returns a snapshot of all state fields:
 
-``get_device_state_info() -> dict``
-    Returns detailed state information including:
+    .. code-block:: python
 
-    * ``state``: Current state name
-    * ``historical_count``: Number of historical records collected
-    * ``historical_complete``: Boolean indicating if historical collection is done
-    * ``connected``: Connection status
-    * ``device_found``: Whether device has been identified
+        {
+            'state':              'TransmittingRealtime',
+            'historical_count':   1234,
+            'historical_complete': True,
+            'connected':          True,
+            'device_found':       True,
+        }
+
+Example — wait until real-time mode:
 
 .. code-block:: python
 
-    # Monitor device state during connection
     async with cm.CMDataCollector(port, cm.SUPPORTED_SENSORS["CM160"]) as sensor:
         while sensor.get_device_state() != "TransmittingRealtime":
-            state_info = sensor.get_device_state_info()
-            print(f"State: {state_info['state']}, Historical: {state_info['historical_count']}")
+            info = sensor.get_device_state_info()
+            print(f"State: {info['state']}, records: {info['historical_count']}")
             await asyncio.sleep(1)
 
-Device Behavior
-===============
+Device Protocol Notes
+=====================
 
-* Historical data transmission occurs immediately after device identification
-* Historical data contains readings from device's internal memory (typically 30 days)
-* Data is transmitted chronologically from oldest to newest
-* Each packet contains: timestamp (year, month, day, hour, minute) and current reading
-* Real-time data begins after historical transmission completes
-* Device sends real-time updates approximately every 5 seconds
+- The CM160 communicates at **250 000 baud** (non-POSIX rate; requires ``serialx``).
+- On first connection the device sends all historical records before switching modes.
+- Historical data is transmitted chronologically (oldest first).
+- Each historical packet contains: year, month, day, hour, minute, and current reading.
+- Real-time packets arrive approximately every **15 seconds**.
+- The library retries the serial connection automatically after a 5-second cooldown if
+  ``read_data()`` is called while disconnected.
+- ``read_timeout=0`` is used on the serial port so the asyncio event loop can detect
+  inter-packet gaps without blocking (see v0.7.2 changelog below).
 
-Bug Fixes
-==========
+Reconnect / Auto-retry
+======================
 
-**v0.5.1**: Fixed critical bug where CM160 device would get stuck in historical sync mode after Home Assistant reboot. The device would continuously send handshake messages without transitioning to real-time mode. This was resolved by implementing timeout-based historical data completion detection, following the reference implementation pattern. The fix ensures reliable historical-to-realtime transition and improved protocol state machine handling.
+If the serial connection drops, ``read_data()`` detects the failure and attempts to reconnect
+automatically, subject to a 5-second minimum retry interval. No manual intervention is required.
+
+Running the Demo
+================
+
+.. code-block:: bash
+
+    python cmsensor_demo.py          # defaults to /dev/ttyUSB0
+    python historical_data_example.py
+
+Changelog
+=========
+
+v0.7.2
+    Fixed ``read_timeout=0`` on the serial port to prevent spurious EOF errors caused by
+    inter-packet gaps when using ``serialx``.
+
+v0.7.1
+    Fixed ``CONTINUE_REQUEST`` and ``START_REQUEST`` constants to be ``bytes`` objects
+    (were plain ``int`` values, which broke the ``serialx 1.7.2+`` write API).
+
+v0.7.0
+    Migrated from ``pyserial-asyncio-fast`` to ``serialx>=1.7.2``, which correctly handles
+    the non-POSIX 250 000 baud rate required by the CM160 on all platforms.
+
+v0.6.1
+    Reverted to ``pyserial-asyncio-fast`` after discovering a 250 000 baud bug in early
+    ``serialx`` releases.
+
+v0.6.0
+    First migration attempt to ``serialx``.
+
+v0.5.9
+    Security hardening.
+
+v0.5.8 / v0.5.7 / v0.5.6
+    Serial communication reliability fixes; concurrency bugfix (async read lock).
+
+v0.5.5 / v0.5.4
+    Timeout increase; general bugfixes.
+
+v0.5.3 / v0.5.2
+    Critical fix for the ``IDTWAITPCR`` handshake protocol bug that caused the device to
+    loop indefinitely without transitioning to real-time mode.
+
+v0.5.1
+    Fixed CM160 historical sync getting stuck after Home Assistant reboot.
+    Introduced timeout-based historical-completion detection.
+
+v0.5.0
+    Added historical data collection (``get_historical_data()``, ``is_historical_data_complete()``,
+    ``clear_historical_data()``).
+    Introduced device state API (``get_device_state()``, ``get_device_state_info()``).
+
+License
+=======
+
+MIT — see ``LICENSE``.
